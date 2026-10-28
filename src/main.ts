@@ -1,5 +1,6 @@
 import "./style.css";
 import { exampleSongs } from "./examples";
+import { History } from "./history";
 import { findIRealLinks, parseIRealLink } from "./ireal";
 import { Player, renderWav } from "./player";
 import { barTimeSigs, Bar, fromFile, newSong, Song, toFile } from "./song";
@@ -25,6 +26,33 @@ const live = { song: songs[0], choruses: 3, tempoStep: 0, countIn: true };
 const player = new Player(live, mix);
 
 const song = () => songs[current];
+
+interface Snapshot {
+  songs: Song[];
+  current: number;
+  selected: number;
+  dirty: number[];
+}
+
+const history = new History<Snapshot>(
+  () => ({
+    songs: structuredClone(songs),
+    current,
+    selected,
+    dirty: songs.flatMap((s, i) => (dirty.has(s) ? [i] : [])),
+  }),
+  (snap) => {
+    songs.splice(0, songs.length, ...structuredClone(snap.songs));
+    dirty.clear();
+    snap.dirty.forEach((i) => dirty.add(songs[i]));
+    current = Math.min(snap.current, songs.length - 1);
+    selected = Math.min(snap.selected, song().bars.length - 1);
+    // Whatever was on disk may not match the restored chart, so treat it as unsaved.
+    dirty.add(song());
+    if (live.song !== song() && player.playing) player.stop();
+    live.song = song();
+  },
+);
 
 // ---- DOM -------------------------------------------------------------------
 
@@ -63,6 +91,12 @@ const el = {
   importText: $<HTMLTextAreaElement>("import-text"),
   importError: $("import-error"),
   toast: $("toast"),
+  undo: $<HTMLButtonElement>("btn-undo"),
+  redo: $<HTMLButtonElement>("btn-redo"),
+  insertBeforeCount: $<HTMLInputElement>("bar-insert-before-count"),
+  insertAfterCount: $<HTMLInputElement>("bar-insert-after-count"),
+  deleteCount: $<HTMLInputElement>("bar-delete-count"),
+  addCount: $<HTMLInputElement>("bar-add-line-count"),
 };
 
 function options(select: HTMLSelectElement, items: Array<[string, string]>): void {
@@ -108,6 +142,12 @@ function renderAll(): void {
   renderChart();
   renderBarEditor();
   renderTransport();
+  renderHistory();
+}
+
+function renderHistory(): void {
+  el.undo.disabled = !history.canUndo;
+  el.redo.disabled = !history.canRedo;
 }
 
 function renderSongList(): void {
@@ -180,12 +220,13 @@ function renderChart(): void {
   el.chart.style.setProperty("--cols", String(BARS_PER_ROW));
 }
 
-function renderBarEditor(): void {
+function renderBarEditor(force = false): void {
   const s = song();
   const bar = s.bars[selected];
   if (!bar) return;
   el.barLabel.textContent = `Bar ${selected + 1} of ${s.bars.length}`;
-  if (document.activeElement !== el.barChords) el.barChords.value = bar.chords.map((c) => (isSpecial(c) ? c : shown(c))).join(" ");
+  renderCounts();
+  if (force || document.activeElement !== el.barChords) el.barChords.value = bar.chords.map((c) => (isSpecial(c) ? c : shown(c))).join(" ");
   el.barSection.value = bar.section ?? "";
   el.barRepeatStart.checked = !!bar.repeatStart;
   el.barRepeatEnd.checked = !!bar.repeatEnd;
@@ -228,18 +269,25 @@ function renderMixer(): void {
 
 // ---- Editing ---------------------------------------------------------------
 
+/** Call before an edit: remembers the current state for undo. */
+function edit(key?: string): void {
+  history.record(key);
+}
+
 function changed(full = false): void {
   dirty.add(song());
   if (full) renderAll();
   else {
     renderChart();
     renderSongList();
+    renderHistory();
   }
 }
 
 function select(i: number, focusInput = false): void {
   const s = song();
   selected = Math.max(0, Math.min(s.bars.length - 1, i));
+  history.breakGroup();
   renderChart();
   el.barChords.value = "";
   el.barChords.blur();
@@ -256,6 +304,7 @@ function currentBar(): Bar {
 }
 
 el.barChords.addEventListener("input", () => {
+  edit(`chords:${current}:${selected}`);
   const tokens = el.barChords.value.trim().split(/[\s,|]+/).filter(Boolean);
   currentBar().chords = tokens.map((t) => (isSpecial(t) ? t.toUpperCase().replace("N.C.", "NC") : stored(normaliseTyped(t))));
   changed();
@@ -284,6 +333,7 @@ el.barChords.addEventListener("keydown", (e) => {
 
 function nextBar(): void {
   if (selected === song().bars.length - 1) {
+    edit();
     song().bars.push({ chords: [] });
     changed();
   }
@@ -293,7 +343,9 @@ function nextBar(): void {
 $("bar-next").addEventListener("click", nextBar);
 
 function barField(input: HTMLInputElement | HTMLSelectElement, apply: (bar: Bar, value: string, checked: boolean) => void): void {
-  input.addEventListener(input instanceof HTMLInputElement && input.type !== "checkbox" ? "input" : "change", () => {
+  const typed = input instanceof HTMLInputElement && input.type !== "checkbox";
+  input.addEventListener(typed ? "input" : "change", () => {
+    edit(typed ? `${input.id}:${current}:${selected}` : undefined);
     const bar = currentBar();
     apply(bar, input.value, input instanceof HTMLInputElement && input.checked);
     for (const k of Object.keys(bar) as Array<keyof Bar>) {
@@ -313,34 +365,113 @@ barField(el.barCoda, (b, _v, c) => (b.coda = c));
 barField(el.barFinal, (b, _v, c) => (b.finalBar = c));
 barField(el.barComment, (b, v) => (b.comment = v));
 
+// ---- Bar actions with a count ----
+
+const MAX_COUNT = 64;
+
+function count(input: HTMLInputElement): number {
+  const n = Math.round(Number(input.value));
+  return Number.isFinite(n) ? Math.max(1, Math.min(MAX_COUNT, n)) : 1;
+}
+
+function plural(n: number): string {
+  return `${n} bar${n === 1 ? "" : "s"}`;
+}
+
+/** How many bars Delete will remove: never more than run to the end of the chart. */
+function deleteCount(): number {
+  return Math.min(count(el.deleteCount), song().bars.length - selected);
+}
+
+function renderCounts(): void {
+  for (const input of [el.insertBeforeCount, el.insertAfterCount, el.addCount]) {
+    input.closest(".counted")!.querySelector(".count-label")!.textContent = plural(count(input));
+  }
+  el.deleteCount.max = String(Math.max(1, song().bars.length - selected));
+  if (count(el.deleteCount) > deleteCount() && document.activeElement !== el.deleteCount) el.deleteCount.value = String(deleteCount());
+  el.deleteCount.closest(".counted")!.querySelector(".count-label")!.textContent = plural(deleteCount());
+}
+
+function emptyBars(n: number): Bar[] {
+  return Array.from({ length: n }, () => ({ chords: [] }));
+}
+
+document.querySelector(".bar-actions")!.addEventListener("click", (e) => {
+  const step = (e.target as HTMLElement).closest<HTMLElement>("[data-step]");
+  if (!step) return;
+  const input = step.parentElement!.querySelector("input")!;
+  input.value = String(Math.max(1, Math.min(Number(input.max) || MAX_COUNT, count(input) + Number(step.dataset.step))));
+  renderCounts();
+  markDoomed();
+});
+
+for (const input of [el.insertBeforeCount, el.insertAfterCount, el.deleteCount, el.addCount]) {
+  input.addEventListener("input", () => {
+    renderCounts();
+    markDoomed();
+  });
+  input.addEventListener("change", () => {
+    input.value = String(count(input));
+    renderCounts();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      input.closest(".counted")!.querySelector<HTMLButtonElement>(".counted-go")!.click();
+    }
+  });
+}
+
 $("bar-insert-before").addEventListener("click", () => {
-  song().bars.splice(selected, 0, { chords: [] });
+  edit();
+  song().bars.splice(selected, 0, ...emptyBars(count(el.insertBeforeCount)));
   changed();
   select(selected, true);
 });
 $("bar-insert-after").addEventListener("click", () => {
-  song().bars.splice(selected + 1, 0, { chords: [] });
+  edit();
+  song().bars.splice(selected + 1, 0, ...emptyBars(count(el.insertAfterCount)));
   changed();
   select(selected + 1, true);
 });
 $("bar-duplicate").addEventListener("click", () => {
+  edit();
   song().bars.splice(selected + 1, 0, structuredClone(currentBar()));
   changed();
   select(selected + 1);
 });
 $("bar-delete").addEventListener("click", () => {
+  edit();
   const bars = song().bars;
-  if (bars.length === 1) bars[0] = { chords: [] };
-  else bars.splice(selected, 1);
+  bars.splice(selected, deleteCount());
+  // A chart always keeps at least one bar.
+  if (bars.length === 0) bars.push({ chords: [] });
   changed();
   select(Math.min(selected, bars.length - 1));
 });
 $("bar-add-line").addEventListener("click", () => {
+  edit();
   const bars = song().bars;
-  for (let k = 0; k < BARS_PER_ROW; k++) bars.push({ chords: [] });
+  const n = count(el.addCount);
+  bars.push(...emptyBars(n));
   changed();
-  select(bars.length - BARS_PER_ROW, true);
+  select(bars.length - n, true);
 });
+
+/** Outlines the bars Delete would remove while the pointer or focus is on it. */
+const deleteGroup = el.deleteCount.closest(".counted")!;
+let doomed = false;
+function markDoomed(): void {
+  el.chart.querySelectorAll(".bar.doomed").forEach((b) => b.classList.remove("doomed"));
+  if (!doomed) return;
+  for (let i = selected; i < selected + deleteCount(); i++) el.chart.querySelector(`[data-bar="${i}"]`)?.classList.add("doomed");
+}
+for (const [type, on] of [["mouseenter", true], ["mouseleave", false], ["focusin", true], ["focusout", false]] as const) {
+  deleteGroup.addEventListener(type, () => {
+    doomed = on;
+    markDoomed();
+  });
+}
 
 el.chart.addEventListener("click", (e) => {
   const barEl = (e.target as HTMLElement).closest<HTMLElement>("[data-bar]");
@@ -357,6 +488,7 @@ el.chart.addEventListener("keydown", (e) => {
     select(selected, true);
   } else if (e.key === "Delete" || e.key === "Backspace") {
     e.preventDefault();
+    edit();
     currentBar().chords = [];
     changed();
     renderBarEditor();
@@ -370,20 +502,24 @@ el.chart.addEventListener("keydown", (e) => {
 });
 
 el.title.addEventListener("input", () => {
+  edit(`title:${current}`);
   song().title = el.title.value;
   changed();
   document.title = `${song().title || "Untitled"} · Band Assembler`;
 });
 el.composer.addEventListener("input", () => {
+  edit(`composer:${current}`);
   song().composer = el.composer.value;
   changed();
 });
 el.style.addEventListener("change", () => {
+  edit();
   song().style = el.style.value;
   changed(true);
 });
 el.key.addEventListener("change", () => {
   // Changing the written key rewrites the chart in the new key.
+  edit();
   const s = song();
   const from = parseKey(s.key);
   const to = parseKey(el.key.value);
@@ -396,26 +532,32 @@ el.key.addEventListener("change", () => {
   changed(true);
 });
 el.timesig.addEventListener("change", () => {
+  edit();
   song().timeSig = el.timesig.value;
   changed();
 });
 
 function setTempo(value: number): void {
   const t = Math.max(30, Math.min(360, Math.round(value) || 120));
+  if (t === song().tempo) return;
+  edit(`tempo:${current}`);
   song().tempo = t;
   el.tempo.value = el.tempoNum.value = el.tempoOut.value = String(t);
   dirty.add(song());
   renderSongList();
+  renderHistory();
 }
 el.tempo.addEventListener("input", () => setTempo(Number(el.tempo.value)));
 el.tempoNum.addEventListener("change", () => setTempo(Number(el.tempoNum.value)));
 
 el.transpose.addEventListener("change", () => {
+  edit();
   song().transpose = Number(el.transpose.value);
   dirty.add(song());
   renderChart();
   renderBarEditor();
   renderSongList();
+  renderHistory();
 });
 el.choruses.addEventListener("change", () => (live.choruses = Number(el.choruses.value)));
 el.tempoStep.addEventListener("change", () => (live.tempoStep = Number(el.tempoStep.value)));
@@ -454,7 +596,7 @@ el.songList.addEventListener("click", (e) => {
   if (closeBtn) {
     const i = Number(closeBtn.dataset.close);
     const s = songs[i];
-    if (dirty.has(s) && !confirm(`“${s.title}” has changes you haven't downloaded. Close it anyway?`)) return;
+    edit();
     songs.splice(i, 1);
     dirty.delete(s);
     if (songs.length === 0) songs.push(newSong());
@@ -466,11 +608,13 @@ el.songList.addEventListener("click", (e) => {
 
 function addSongs(list: Song[]): void {
   if (!list.length) return;
+  edit();
   songs.push(...list);
   openSong(songs.length - list.length);
 }
 
 $("btn-new").addEventListener("click", () => {
+  edit();
   const s = newSong();
   songs.push(s);
   dirty.add(s);
@@ -637,6 +781,33 @@ player.onPosition = (pos) => {
   }
   if (!pos) renderTransport();
 };
+
+// ---- Undo and redo ----
+
+function undoRedo(which: "undo" | "redo"): void {
+  const done = which === "undo" ? history.undo() : history.redo();
+  if (!done) return;
+  renderAll();
+  renderBarEditor(true);
+}
+
+el.undo.addEventListener("click", () => undoRedo("undo"));
+el.redo.addEventListener("click", () => undoRedo("redo"));
+
+document.addEventListener(
+  "keydown",
+  (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    // The import box keeps the browser's own text undo.
+    if ((e.target as HTMLElement).closest("dialog")) return;
+    const key = e.key.toLowerCase();
+    if (key === "z" || key === "y") {
+      e.preventDefault();
+      undoRedo(key === "y" || e.shiftKey ? "redo" : "undo");
+    }
+  },
+  true,
+);
 
 // ---- Toast -----------------------------------------------------------------
 

@@ -14,6 +14,9 @@
         <span>Band Assembler</span>
       </div>
       <nav class="file-actions" aria-label="File">
+        <button id="btn-undo" class="icon" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>↶</button>
+        <button id="btn-redo" class="icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>↷</button>
+        <span class="sep" aria-hidden="true"></span>
         <button id="btn-new" title="Start a new chart">New</button>
         <button id="btn-open" title="Open a Band Assembler file, or an iReal Pro playlist export (.html)">Open…</button>
         <button id="btn-import" title="Paste an irealb:// link">Import iReal</button>
@@ -74,11 +77,39 @@
             <label class="wide">Comment <input id="bar-comment" placeholder="D.C. al Coda, Fine…" /></label>
           </div>
           <div class="bar-actions">
-            <button id="bar-insert-before">Insert before</button>
-            <button id="bar-insert-after">Insert after</button>
+            <div class="counted">
+              <button id="bar-insert-before" class="counted-go">Insert <span class="count-label">1 bar</span> before</button>
+              <span class="stepper">
+                <button type="button" class="step" data-step="-1" aria-label="Fewer bars">−</button>
+                <input id="bar-insert-before-count" type="number" min="1" max="64" value="1" inputmode="numeric" aria-label="Number of bars to insert before" />
+                <button type="button" class="step" data-step="1" aria-label="More bars">+</button>
+              </span>
+            </div>
+            <div class="counted">
+              <button id="bar-insert-after" class="counted-go">Insert <span class="count-label">1 bar</span> after</button>
+              <span class="stepper">
+                <button type="button" class="step" data-step="-1" aria-label="Fewer bars">−</button>
+                <input id="bar-insert-after-count" type="number" min="1" max="64" value="1" inputmode="numeric" aria-label="Number of bars to insert after" />
+                <button type="button" class="step" data-step="1" aria-label="More bars">+</button>
+              </span>
+            </div>
+            <div class="counted danger">
+              <button id="bar-delete" class="counted-go">Delete <span class="count-label">1 bar</span></button>
+              <span class="stepper">
+                <button type="button" class="step" data-step="-1" aria-label="Fewer bars">−</button>
+                <input id="bar-delete-count" type="number" min="1" max="64" value="1" inputmode="numeric" aria-label="Number of bars to delete" />
+                <button type="button" class="step" data-step="1" aria-label="More bars">+</button>
+              </span>
+            </div>
+            <div class="counted">
+              <button id="bar-add-line" class="counted-go">Add <span class="count-label">4 bars</span> at end</button>
+              <span class="stepper">
+                <button type="button" class="step" data-step="-1" aria-label="Fewer bars">−</button>
+                <input id="bar-add-line-count" type="number" min="1" max="64" value="4" inputmode="numeric" aria-label="Number of bars to add at the end" />
+                <button type="button" class="step" data-step="1" aria-label="More bars">+</button>
+              </span>
+            </div>
             <button id="bar-duplicate">Duplicate</button>
-            <button id="bar-delete" class="danger">Delete bar</button>
-            <button id="bar-add-line">Add 4 bars</button>
           </div>
         </section>
       </main>

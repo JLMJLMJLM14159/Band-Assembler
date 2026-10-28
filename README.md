@@ -9,6 +9,10 @@ Nothing is saved in the browser. Everything you want to keep is a download, and 
 
 - **Chart editor:** a four-bars-per-line grid. Each bar can have a section label, repeat signs, 1st/2nd/3rd endings,
   time signature changes, segno, coda, a final bar and a comment.
+- **Bar tools:** insert bars before or after the selected bar, delete bars from it onwards, or add bars at the end.
+  Each button has its own counter for how many bars it affects, and Delete outlines the bars it is about to remove.
+- **Undo and redo:** covers every change to a chart, plus opening, importing and closing charts. Typing in one field
+  counts as a single step.
 - **Chord entry:** `Cmaj7`, `C^7`, `CΔ`, `D-7`, `Dm7`, `Bø`, `Bh7`, `C°7`, `G7b9`, `G7alt`, `F/A` and similar spellings.
   `/` holds the previous chord for another beat, `%` repeats the previous bar and `NC` means no chord.
 - **Playback:** follows the form, including repeats, endings, D.C./D.S. al Coda and al Fine. The current bar is
@@ -46,6 +50,8 @@ The chart file is plain JSON:
 | Key | Action |
 | --- | --- |
 | Space | Play / stop |
+| Ctrl/⌘+Z | Undo |
+| Ctrl/⌘+Shift+Z or Ctrl+Y | Redo |
 | Arrow keys | Move around the chart |
 | A–G | Start typing a chord into the selected bar |
 | Enter / Tab | Next bar (Shift+Tab goes back) |

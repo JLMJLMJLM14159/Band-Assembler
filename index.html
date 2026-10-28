@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#14161b" />
+    <title>Band Assembler</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f2b544'/%3E%3Cpath d='M12 22V8l12-2v14' stroke='%2314161b' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='9.5' cy='22' r='3' fill='%2314161b'/%3E%3Ccircle cx='21.5' cy='20' r='3' fill='%2314161b'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">♪</span>
+        <span>Band Assembler</span>
+      </div>
+      <nav class="file-actions" aria-label="File">
+        <button id="btn-new" title="Start a new chart">New</button>
+        <button id="btn-open" title="Open a Band Assembler file, or an iReal Pro playlist export (.html)">Open…</button>
+        <button id="btn-import" title="Paste an irealb:// link">Import iReal</button>
+        <span class="sep" aria-hidden="true"></span>
+        <button id="btn-save" class="primary" title="Download this chart as a file">Download chart</button>
+        <button id="btn-save-all" title="Download every open chart in one file">Download all</button>
+        <button id="btn-wav" title="Render the backing track and download it as a WAV file">Download audio</button>
+        <button id="btn-print" title="Print the chart or save it as PDF">Print</button>
+      </nav>
+      <input id="file-input" type="file" accept=".json,.txt,.html,.htm" multiple hidden />
+    </header>
+
+    <div class="layout">
+      <aside class="songs" aria-label="Open charts">
+        <div class="songs-head">
+          <h2>Open charts</h2>
+          <span class="hint">Nothing is stored in the browser. Download to keep your work.</span>
+        </div>
+        <ul id="song-list"></ul>
+      </aside>
+
+      <main class="sheet">
+        <section class="meta">
+          <input id="title" class="title" aria-label="Title" placeholder="Title" />
+          <input id="composer" class="composer" aria-label="Composer" placeholder="Composer" />
+          <div class="meta-row">
+            <label>Style <select id="style"></select></label>
+            <label>Written key <select id="key"></select></label>
+            <label>Time <select id="timesig"></select></label>
+            <label>Tempo <input id="tempo-num" type="number" min="30" max="360" /></label>
+          </div>
+        </section>
+
+        <section id="chart" class="chart" tabindex="0" aria-label="Chord chart. Arrow keys move, Enter edits."></section>
+
+        <section id="bar-editor" class="bar-editor" aria-label="Selected bar">
+          <div class="bar-editor-head">
+            <strong id="bar-label">Bar 1</strong>
+            <span class="hint">Space between chords. <code>/</code> holds a beat, <code>%</code> repeats the previous bar, <code>NC</code> is no chord.</span>
+          </div>
+          <div class="chord-entry">
+            <input id="bar-chords" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. D-7 G7" />
+            <button id="bar-next" title="Next bar (Enter)">Next ›</button>
+          </div>
+          <div class="bar-options">
+            <label>Section <input id="bar-section" maxlength="8" placeholder="A, B, Intro…" /></label>
+            <label class="check"><input type="checkbox" id="bar-repeat-start" /> Repeat start</label>
+            <label class="check"><input type="checkbox" id="bar-repeat-end" /> Repeat end</label>
+            <label>Ending
+              <select id="bar-ending">
+                <option value="">–</option><option value="1">1.</option><option value="2">2.</option><option value="3">3.</option>
+              </select>
+            </label>
+            <label>Time change <select id="bar-timesig"></select></label>
+            <label class="check"><input type="checkbox" id="bar-segno" /> Segno</label>
+            <label class="check"><input type="checkbox" id="bar-coda" /> Coda</label>
+            <label class="check"><input type="checkbox" id="bar-final" /> Final bar</label>
+            <label class="wide">Comment <input id="bar-comment" placeholder="D.C. al Coda, Fine…" /></label>
+          </div>
+          <div class="bar-actions">
+            <button id="bar-insert-before">Insert before</button>
+            <button id="bar-insert-after">Insert after</button>
+            <button id="bar-duplicate">Duplicate</button>
+            <button id="bar-delete" class="danger">Delete bar</button>
+            <button id="bar-add-line">Add 4 bars</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="transport" aria-label="Playback">
+      <button id="btn-play" class="play" aria-label="Play">▶</button>
+      <div class="tempo">
+        <label for="tempo">Tempo</label>
+        <input id="tempo" type="range" min="30" max="360" />
+        <output id="tempo-out">140</output>
+      </div>
+      <button id="btn-more" class="more" aria-expanded="false" aria-controls="transport-more">Options</button>
+      <div id="transport-more" class="transport-more">
+      <label class="compact">Play in <select id="transpose"></select></label>
+      <label class="compact">Choruses
+        <select id="choruses">
+          <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
+          <option value="4">4</option><option value="6">6</option><option value="8">8</option><option value="0">Loop</option>
+        </select>
+      </label>
+      <label class="compact">Speed up <select id="tempo-step">
+          <option value="0">off</option><option value="2">+2/chorus</option><option value="5">+5/chorus</option><option value="10">+10/chorus</option>
+        </select>
+      </label>
+      <label class="compact check"><input type="checkbox" id="count-in" checked /> Count-in</label>
+      <div class="mixer" id="mixer"></div>
+      </div>
+    </footer>
+
+    <dialog id="import-dialog">
+      <form method="dialog">
+        <h2>Import from iReal Pro</h2>
+        <p>Paste an <code>irealb://</code> link, for example from “Share → Copy link” or from a forum post. Playlists bring in every song.</p>
+        <textarea id="import-text" rows="6" placeholder="irealb://…"></textarea>
+        <p id="import-error" class="error" role="alert"></p>
+        <div class="dialog-actions">
+          <button value="cancel">Cancel</button>
+          <button id="import-go" value="default" class="primary">Import</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
